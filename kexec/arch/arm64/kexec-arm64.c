@@ -21,6 +21,7 @@
 #include "crashdump-arm64.h"
 #include "dt-ops.h"
 #include "fs2dt.h"
+#include "iomem.h"
 #include "kexec-syscall.h"
 #include "arch/options.h"
 
@@ -551,18 +552,28 @@ void add_segment(struct kexec_info *info, const void *buf, size_t bufsz,
  * get_memory_ranges_iomem_cb - Helper for get_memory_ranges_iomem.
  */
 
+static int count_memory_ranges;
+
 static int get_memory_ranges_iomem_cb(void *data, int nr, char *str,
 	unsigned long long base, unsigned long long length)
 {
 	struct memory_range *r;
 
-	if (nr >= KEXEC_SEGMENT_MAX)
+	if (count_memory_ranges >= KEXEC_SEGMENT_MAX)
 		return -1;
 
-	r = (struct memory_range *)data + nr;
-	r->type = RANGE_RAM;
+	r = (struct memory_range *)data + count_memory_ranges;
+
+	if (!strncmp(str, SYSTEM_RAM, strlen(SYSTEM_RAM)))
+		r->type = RANGE_RAM;
+	else if (!strncmp(str, IOMEM_RESERVED, strlen(IOMEM_RESERVED)))
+		r->type = RANGE_RESERVED;
+	else
+		return 0;
+
 	r->start = base;
 	r->end = base + length - 1;
+	count_memory_ranges++;
 
 	set_phys_offset(r->start);
 
@@ -579,9 +590,10 @@ static int get_memory_ranges_iomem_cb(void *data, int nr, char *str,
 static int get_memory_ranges_iomem(struct memory_range *array,
 	unsigned int *count)
 {
-	*count = kexec_iomem_for_each_line("System RAM\n",
-		get_memory_ranges_iomem_cb, array);
+	count_memory_ranges = 0;
+	kexec_iomem_for_each_line(NULL, get_memory_ranges_iomem_cb, array);
 
+	*count = count_memory_ranges;
 	if (!*count) {
 		dbgprintf("%s: failed: No RAM found.\n", __func__);
 		return -EFAILED;
