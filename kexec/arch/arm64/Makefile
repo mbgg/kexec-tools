@@ -5,6 +5,8 @@ arm64_FS2DT_INCLUDE += -include $(srcdir)/kexec/arch/arm64/kexec-arm64.h \
 
 arm64_DT_OPS += kexec/dt-ops.c
 
+arm64_MEM_REGIONS = kexec/mem_regions.c
+
 arm64_CPPFLAGS += -I $(srcdir)/kexec/
 
 arm64_KEXEC_SRCS += \
