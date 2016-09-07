@@ -213,3 +213,26 @@ int load_crashdump_segments(struct kexec_info *info)
 
 	return 0;
 }
+
+/*
+ * e_entry and p_paddr are actually in virtual address space.
+ * Those values will be translated to physcal addresses by
+ * using virt_to_phys().
+ * So let's get ready for later use so the memory base (phys_offset)
+ * will be correctly replaced with crash_reserved_mem.start.
+ */
+void modify_ehdr_for_crashdump(struct mem_ehdr *ehdr)
+{
+	struct mem_phdr *phdr;
+	int i;
+
+	ehdr->e_entry += - arm64_mem.phys_offset + crash_reserved_mem.start;
+
+	for (i = 0; i < ehdr->e_phnum; i++) {
+		phdr = &ehdr->e_phdr[i];
+		if (phdr->p_type != PT_LOAD)
+			continue;
+		phdr->p_paddr +=
+			(-arm64_mem.phys_offset + crash_reserved_mem.start);
+	}
+}
