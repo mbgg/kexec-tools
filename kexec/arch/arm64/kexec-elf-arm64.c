@@ -119,6 +119,16 @@ int elf_arm64_load(int argc, char **argv, const char *kernel_buf,
 	dbgprintf("%s: PE format:      %s\n", __func__,
 		(arm64_header_check_pe_sig(header) ? "yes" : "no"));
 
+	if (info->kexec_flags & KEXEC_ON_CRASH) {
+		/* create and initialize elf core header segment */
+		result = load_crashdump_segments(info);
+		if (result) {
+			dbgprintf("%s: Creating eflcorehdr failed.\n",
+								__func__);
+			goto exit;
+		}
+	}
+
 	/* load the kernel */
 	result = elf_exec_load(&ehdr, info);
 
