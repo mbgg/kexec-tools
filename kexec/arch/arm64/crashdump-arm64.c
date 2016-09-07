@@ -13,6 +13,7 @@
 #define _GNU_SOURCE
 
 #include <errno.h>
+#include <stdlib.h>
 #include <linux/elf.h>
 
 #include "kexec.h"
@@ -21,11 +22,12 @@
 #include "iomem.h"
 #include "kexec-arm64.h"
 #include "kexec-elf.h"
+#include "libfdt.h"
 #include "mem_regions.h"
 
 /* memory ranges on crashed kernel */
 static struct memory_range crash_memory_ranges[CRASH_MAX_MEMORY_RANGES];
-static struct memory_ranges crash_memory_rgns = {
+struct memory_ranges crash_memory_rgns = {
 	.size = 0,
 	.max_size = CRASH_MAX_MEMORY_RANGES,
 	.ranges = crash_memory_ranges,
@@ -235,4 +237,141 @@ void modify_ehdr_for_crashdump(struct mem_ehdr *ehdr)
 		phdr->p_paddr +=
 			(-arm64_mem.phys_offset + crash_reserved_mem.start);
 	}
+}
+
+static int dtb_add_reserved_memory(void *dtb_buf)
+{
+	int nodeoffset, rsvmem_node;
+	uint32_t cell_size;
+	uint64_t range[2];
+	char name[30];
+	int i, result = 0;
+
+	rsvmem_node = fdt_path_offset(dtb_buf, "reserved-memory");
+	if (rsvmem_node < 0) {
+		nodeoffset = fdt_path_offset(dtb_buf, "/");
+		rsvmem_node = fdt_add_subnode(dtb_buf, nodeoffset,
+						"reserved-memory");
+		if (rsvmem_node < 0) {
+			result = rsvmem_node;
+			goto on_error;
+		}
+
+		cell_size = cpu_to_fdt32(2);
+		fdt_setprop(dtb_buf, rsvmem_node, "#address-cells",
+						&cell_size, sizeof(cell_size));
+		fdt_setprop(dtb_buf, rsvmem_node, "#size-cells",
+						&cell_size, sizeof(cell_size));
+		fdt_setprop(dtb_buf, rsvmem_node, "ranges", NULL, 0);
+	}
+
+	for (i = 0; i < crash_memory_rgns.size; i++) {
+		sprintf(name, "crash_dump@%llx",
+					crash_memory_rgns.ranges[i].start);
+		nodeoffset = fdt_add_subnode(dtb_buf, rsvmem_node, name);
+		if (nodeoffset < 0) {
+			result = nodeoffset;
+			goto on_error;
+		}
+
+		range[0] = cpu_to_fdt64(crash_memory_rgns.ranges[i].start);
+		range[1] = cpu_to_fdt64(crash_memory_rgns.ranges[i].end
+					- crash_memory_rgns.ranges[i].start + 1);
+		fdt_setprop(dtb_buf, nodeoffset, "reg", &range, sizeof(range));
+		fdt_setprop(dtb_buf, nodeoffset, "no-map", NULL, 0);
+	}
+
+on_error:
+	return result;
+}
+
+/*
+ * Increased size for extra properties:
+ * - linux,elfcorehdr
+ *      linux,elfcoredhr = <base, size>;
+ * - reserved-memory node
+ *      reserved-memory {
+ *         #address-cells = <2>;
+ *         #size-cells = <2>;
+ *         ranges;
+ *         crash_dump@xx {
+ *            reg = <base, size>;
+ *            no-map;
+ *         };
+ *         ...
+ *      }
+ */
+#define DTB_ELFCOREHDR_PROP_SIZE \
+		 (sizeof(struct fdt_property)		\
+		+ FDT_TAGALIGN(sizeof(uint64_t) * 2)	\
+		+ strlen("linux,elfcorehdr") + 1)
+#define DTB_RESVMEM_NODE_SIZE \
+		 (sizeof(struct fdt_node_header)	\
+		+ strlen("reserved-memory") + 1		\
+		+ sizeof(struct fdt_property)		\
+		+ FDT_TAGALIGN(sizeof(uint32_t))	\
+		+ strlen("#address-cells") + 1		\
+		+ sizeof(struct fdt_property)		\
+		+ FDT_TAGALIGN(sizeof(uint32_t))	\
+		+ strlen("#size-cells") + 1		\
+		+ sizeof(struct fdt_property)		\
+		+ strlen("ranges") + 1)
+#define DTB_RESVMEM_SUBNODE_SIZE \
+		 (sizeof(struct fdt_node_header)	\
+		+ strlen("crash_dump@xxxxxxxxxxxxxxxx") + 1	\
+		+ sizeof(struct fdt_property)		\
+		+ FDT_TAGALIGN(sizeof(uint64_t) * 2)	\
+		+ strlen("reg") + 1			\
+		+ sizeof(struct fdt_property)	\
+		+ strlen("no-map") + 1)
+
+void *fixup_memory_properties(void *dtb_buf)
+{
+	char *new_buf;
+	int new_size;
+	uint64_t range[2];
+	int nodeoffset;
+	int result;
+
+	new_size = fdt_totalsize(dtb_buf)
+		   + DTB_ELFCOREHDR_PROP_SIZE
+		   + DTB_RESVMEM_NODE_SIZE
+		   + DTB_RESVMEM_SUBNODE_SIZE * crash_memory_rgns.size;
+
+	new_buf = xmalloc(new_size);
+	result = fdt_open_into(dtb_buf, new_buf, new_size);
+	if (result) {
+		dbgprintf("%s: fdt_open_into failed: %s\n", __func__,
+						fdt_strerror(result));
+		result = -EFAILED;
+		goto on_error;
+	}
+
+	range[0] = cpu_to_fdt64(elfcorehdr_mem.start);
+	range[1] = cpu_to_fdt64(elfcorehdr_mem.end - elfcorehdr_mem.start + 1);
+	nodeoffset = fdt_path_offset(new_buf, "/chosen");
+	result = fdt_setprop(new_buf, nodeoffset, "linux,elfcorehdr",
+						(void *)range, sizeof(range));
+	if (result) {
+		dbgprintf("%s: fdt_setprop failed: %s\n", __func__,
+						fdt_strerror(result));
+		goto on_error;
+	}
+
+	result = dtb_add_reserved_memory(new_buf);
+	if (result) {
+		dbgprintf("%s: adding reserved-memory failed: %s\n", __func__,
+						fdt_strerror(result));
+		result = -EFAILED;
+		goto on_error;
+	}
+
+	fdt_pack(new_buf);
+
+	return new_buf;
+
+on_error:
+	if (new_buf)
+		free(new_buf);
+	return NULL;
 }

@@ -128,9 +128,6 @@ int arch_process_options(int argc, char **argv)
 		case OPT_INITRD:
 			arm64_opts.initrd = optarg;
 			break;
-		case OPT_PANIC:
-			die("load-panic (-p) not supported");
-			break;
 		case OPT_PORT:
 			arm64_opts.port = strtoull(optarg, NULL, 0);
 			break;
@@ -361,8 +358,10 @@ on_success:
  * setup_2nd_dtb - Setup the 2nd stage kernel's dtb.
  */
 
-static int setup_2nd_dtb(struct dtb *dtb, char *command_line)
+static int setup_2nd_dtb(struct dtb *dtb, char *command_line, int on_crash)
 {
+	int nodeoffset;
+	void *new_buf;
 	int result;
 
 	result = fdt_check_header(dtb->buf);
@@ -374,7 +373,31 @@ static int setup_2nd_dtb(struct dtb *dtb, char *command_line)
 
 	result = set_bootargs(dtb, command_line);
 
+	/*
+	 * Those properties are meaningful only for the current kernel.
+	 * So remove them anyway.
+	 */
+	nodeoffset = fdt_path_offset(dtb->buf, "/chosen");
+	fdt_delprop(dtb->buf, nodeoffset, "linux,crashkernel-base");
+	fdt_delprop(dtb->buf, nodeoffset, "linux,crashkernel-size");
+	fdt_delprop(dtb->buf, nodeoffset, "linux,elfcorehdr");
+
+	if (on_crash) {
+		new_buf = fixup_memory_properties(dtb->buf);
+		if (!new_buf)
+			goto on_error;
+
+		dtb->buf = new_buf;
+		dtb->size = fdt_totalsize(new_buf);
+	}
+
 	dump_reservemap(dtb);
+
+
+	return result;
+
+on_error:
+	fprintf(stderr, "kexec: %s failed.\n", __func__);
 
 	return result;
 }
@@ -448,7 +471,8 @@ int arm64_load_other_segments(struct kexec_info *info,
 		}
 	}
 
-	result = setup_2nd_dtb(&dtb, command_line);
+	result = setup_2nd_dtb(&dtb, command_line,
+			info->kexec_flags & KEXEC_ON_CRASH);
 
 	if (result)
 		return -EFAILED;

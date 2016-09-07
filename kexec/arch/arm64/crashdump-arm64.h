@@ -16,11 +16,13 @@
 
 #define CRASH_MAX_MEMORY_RANGES	32
 
+extern struct memory_ranges crash_memory_rgns;
 extern struct memory_ranges usablemem_rgns;
 extern struct memory_range crash_reserved_mem;
 extern struct memory_range elfcorehdr_mem;
 
 extern int load_crashdump_segments(struct kexec_info *info);
 extern void modify_ehdr_for_crashdump(struct mem_ehdr *ehdr);
+extern void *fixup_memory_properties(void *dtb_buf);
 
 #endif /* CRASHDUMP_ARM64_H */
