@@ -161,7 +161,7 @@ int arch_process_options(int argc, char **argv)
 			break;
 		case OPT_KEXEC_FILE_SYSCALL:
 			do_kexec_file_syscall = 1;
-		case OPT_CONSOLE
+		case OPT_CONSOLE:
 			arm64_opts.console = optarg;
 			break;
 		default:
@@ -193,34 +193,32 @@ int arch_process_options(int argc, char **argv)
 
 static uint64_t find_purgatory_sink(const char *console)
 {
-	struct data {const char *name; int tx_offset;};
-	static const struct data ok_list[] = {
-	/*	{"armada-3700-uart", ?},	*/
-		{"exynos4210-uart", 0x20},
-	/*	{"ls1021a-lpuart", ?},		*/
-	/*	{"meson-uart", ?},		*/
-	/*	{"mt6577-uart", ?},		*/
-		{"ns16550", 0},
-		{"ns16550a", 0},
-		{"pl011", 0},
-		{NULL, 0}
-	};
-	uint64_t addr;
-	const char *p;
-	const char *device;
-	const struct data *ok;
+//	struct data {const char *name; int tx_offset;};
+//	static const struct data ok_list[] = {
+//	/*	{"armada-3700-uart", ?},	*/
+//		{"exynos4210-uart", 0x20},
+//	/*	{"ls1021a-lpuart", ?},		*/
+//	/*	{"meson-uart", ?},		*/
+//	/*	{"mt6577-uart", ?},		*/
+//		{"ns16550", 0},
+//		{"ns16550a", 0},
+//		{"pl011", 0},
+//		{NULL, 0}
+//	};
+//	uint64_t addr;
+//	const char *p;
+//	const struct data *ok;
 
 	int fd, ret;
-	const char *folder;
+	char folder[255], device[255];
 	struct stat sb;
 	char buffer[18];
-	uint64_t iomem;
+	uint64_t iomem = 0x0;
 
 	if (!console)
 		return 0;
 
 	// check /sys/class/tty/${console} exists
-	
 	
 	sprintf(device, "/sys/class/tty/%s", console);
 	printf("console folder is %s\n", device);
@@ -241,13 +239,17 @@ static uint64_t find_purgatory_sink(const char *console)
 	// get iomem_base
 	
 	ret = read(fd, buffer, 18);
-	if (ret < 0)
+	if (ret < 0) {
+		close(fd);
 		return 0;
+	}
 
-	scanf(iomem, "%x", buffer);
-	printf("console memory is at%c\n", buffer);
+	sscanf(buffer, "%lu", &iomem);
+	printf("console memory is at%s\n", buffer);
 	
 	// iomem_reg_shift?
+
+	close(fd);
 	return iomem;
 }
 
