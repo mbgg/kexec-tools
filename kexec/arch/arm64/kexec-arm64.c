@@ -161,8 +161,8 @@ int arch_process_options(int argc, char **argv)
 			break;
 		case OPT_KEXEC_FILE_SYSCALL:
 			do_kexec_file_syscall = 1;
-		case OPT_PORT:
-			arm64_opts.port = strtoull(optarg, NULL, 0);
+		case OPT_CONSOLE
+			arm64_opts.console = optarg;
 			break;
 		default:
 			break; /* Ignore core and unknown options. */
@@ -178,8 +178,8 @@ int arch_process_options(int argc, char **argv)
 	dbgprintf("%s:%d: dtb: %s\n", __func__, __LINE__,
 		(do_kexec_file_syscall && arm64_opts.dtb ? "(ignored)" :
 							arm64_opts.dtb));
-	dbgprintf("%s:%d: port: 0x%" PRIx64 "\n", __func__, __LINE__,
-		arm64_opts.port);
+	dbgprintf("%s:%d: console: %s\n", __func__, __LINE__,
+		arm64_opts.console);
 
 	if (do_kexec_file_syscall)
 		arm64_opts.dtb = NULL;
@@ -191,7 +191,7 @@ int arch_process_options(int argc, char **argv)
  * find_purgatory_sink - Find a sink for purgatory output.
  */
 
-static uint64_t find_purgatory_sink(const char *command_line)
+static uint64_t find_purgatory_sink(const char *console)
 {
 	struct data {const char *name; int tx_offset;};
 	static const struct data ok_list[] = {
@@ -210,52 +210,45 @@ static uint64_t find_purgatory_sink(const char *command_line)
 	const char *device;
 	const struct data *ok;
 
-	if (arm64_opts.port)
-		return arm64_opts.port;
+	int fd, ret;
+	const char *folder;
+	struct stat sb;
+	char buffer[18];
+	uint64_t iomem;
 
-#if defined(ARM64_DEBUG_PORT)
-	return (uint64_t)(ARM64_DEBUG_PORT);
-#endif
-	if (!command_line)
+	if (!console)
 		return 0;
 
-	if (!(p = strstr(command_line, "earlyprintk=")) &&
-		!(p = strstr(command_line, "earlycon=")))
-		return 0;
+	// check /sys/class/tty/${console} exists
+	
+	
+	sprintf(device, "/sys/class/tty/%s", console);
+	printf("console folder is %s\n", device);
 
-	p = strchr(p, '=');
-	p++;
-
-	device = p;
-
-	p = strchr(p, ',');
-
-	if (!p)
-		return 0;
-
-	p++;
-
-	for (ok = ok_list; ok->name; ok++) {
-		int len = strlen(ok->name);
-
-		if (device[len] == ',' && !memcmp(device, ok->name, len))
-			break;
-	}
-
-	if (!ok->name) {
-		fprintf(stderr,
-			"kexec: %s: Warning: Non-compatible earlycon device found: %s.\n",
+	if (!stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+		fprintf(stderr, "kexec: %s: No valid console found for %s\n",
 			__func__, device);
 		return 0;
 	}
 
-	if (!*p)
+	sprintf(device, device, "/iomem_base");
+	printf("console memory read from %s\n", device);
+
+	fd = open(device, O_RDONLY);
+	if (fd < 0)
 		return 0;
 
-	errno = 0;
-	addr = strtoull(p, NULL, 0);
+	// get iomem_base
+	
+	ret = read(fd, buffer, 18);
+	if (ret < 0)
+		return 0;
 
-	return errno ? 0 : addr + ok->tx_offset;
+	scanf(iomem, "%x", buffer);
+	printf("console memory is at%c\n", buffer);
+	
+	// iomem_reg_shift?
+	return iomem;
 }
 
 /**
@@ -727,7 +720,7 @@ int arm64_load_other_segments(struct kexec_info *info,
 		command_line[sizeof(command_line) - 1] = 0;
 	}
 
-	purgatory_sink = find_purgatory_sink(command_line);
+	purgatory_sink = find_purgatory_sink(arm64_opts.console);
 
 	dbgprintf("%s:%d: purgatory sink: 0x%" PRIx64 "\n", __func__, __LINE__,
 		purgatory_sink);
