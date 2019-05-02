@@ -229,7 +229,7 @@ static uint64_t find_purgatory_sink(const char *console)
 		return 0;
 	}
 
-	sprintf(mem, device, "/iomem_base");
+	sprintf(mem, device"%s", "/iomem_base");
 	printf("console memory read from %s\n", mem);
 
 	fd = open(mem, O_RDONLY);
