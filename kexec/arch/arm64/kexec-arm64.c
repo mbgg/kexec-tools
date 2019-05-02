@@ -210,7 +210,7 @@ static uint64_t find_purgatory_sink(const char *console)
 //	const struct data *ok;
 
 	int fd, ret;
-	char folder[255], device[255];
+	char folder[255], device[255], mem[255];
 	struct stat sb;
 	char buffer[18];
 	uint64_t iomem = 0x0;
@@ -229,17 +229,21 @@ static uint64_t find_purgatory_sink(const char *console)
 		return 0;
 	}
 
-	sprintf(device, device, "/iomem_base");
-	printf("console memory read from %s\n", device);
+	sprintf(mem, device, "/iomem_base");
+	printf("console memory read from %s\n", mem);
 
-	fd = open(device, O_RDONLY);
-	if (fd < 0)
+	fd = open(mem, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "kexec: %s: No able to open %s\n",
+			__func__, mem);
 		return 0;
+	}
 
 	// get iomem_base
 	
 	ret = read(fd, buffer, 18);
 	if (ret < 0) {
+		fprintf(stderr, "kexec: %s: not able to read fd\n", __func__);
 		close(fd);
 		return 0;
 	}
