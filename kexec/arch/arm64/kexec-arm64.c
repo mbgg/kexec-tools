@@ -248,8 +248,9 @@ static uint64_t find_purgatory_sink(const char *console)
 		return 0;
 	}
 
+	memset(buffer, '\0', sizeof(char) * 18);
 	sscanf(buffer, "%lu", &iomem);
-	printf("console memory is at%s\n", buffer);
+	printf("console memory is at %s\n", buffer);
 	
 	// iomem_reg_shift?
 
