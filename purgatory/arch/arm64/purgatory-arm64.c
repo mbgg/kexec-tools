@@ -24,6 +24,7 @@ void putchar(int ch)
 
 void post_verification_setup_arch(void)
 {
+	printf("purgatory: booting kernel now\n");
 }
 
 void setup_arch(void)

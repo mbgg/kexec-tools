@@ -218,11 +218,7 @@ static uint64_t find_purgatory_sink(const char *console)
 	if (!console)
 		return 0;
 
-	// check /sys/class/tty/${console} exists
-	
 	sprintf(device, "/sys/class/tty/%s", console);
-	printf("console folder is %s\n", device);
-
 	if (!stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode)) {
 		fprintf(stderr, "kexec: %s: No valid console found for %s\n",
 			__func__, device);
@@ -239,8 +235,7 @@ static uint64_t find_purgatory_sink(const char *console)
 		return 0;
 	}
 
-	// get iomem_base
-	
+	memset(buffer, '\0', sizeof(char) * 18);
 	ret = read(fd, buffer, 18);
 	if (ret < 0) {
 		fprintf(stderr, "kexec: %s: not able to read fd\n", __func__);
@@ -248,9 +243,8 @@ static uint64_t find_purgatory_sink(const char *console)
 		return 0;
 	}
 
-	memset(buffer, '\0', sizeof(char) * 18);
-	sscanf(buffer, "%lu", &iomem);
-	printf("console memory is at %s\n", buffer);
+	sscanf(buffer, "%lx", &iomem);
+	printf("console memory is at %#lx\n", iomem);
 	
 	// iomem_reg_shift?
 
